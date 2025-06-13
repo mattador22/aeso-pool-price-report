@@ -1,0 +1,54 @@
+<!doctype html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>AESO Pool-Price Viewer</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    body{font-family:sans-serif;max-width:900px;margin:40px auto}
+    #controls{margin-bottom:20px}
+  </style>
+</head>
+<body>
+  <h1>AESO Pool Price (v1.1)</h1>
+
+  <div id="controls">
+    From <input id="start" type="date" value="2025-01-01">
+    To   <input id="end"   type="date" value="2025-05-31">
+    <button id="btn">Fetch</button>
+  </div>
+
+  <canvas id="chart" height="120"></canvas>
+
+<script>
+const proxy = 'https://aesoprice-proxy.matt-e74.workers.dev/';   // ← your Worker
+
+const ctx = document.getElementById('chart');
+const chart = new Chart(ctx, {
+  type:'line',
+  data:{labels:[],datasets:[
+    {label:'Pool Price', data:[], borderWidth:1, borderColor:'#1976d2', fill:false},
+    {label:'30-Day Avg', data:[], borderWidth:1, borderColor:'#d32f2f', fill:false}
+  ]},
+  options:{scales:{y:{beginAtZero:true}}}
+});
+
+async function load() {
+  const s = document.getElementById('start').value;
+  const e = document.getElementById('end').value;
+  const url = `${proxy}?startDate=${s}&endDate=${e}`;
+
+  const json = await (await fetch(url)).json();
+  const rows = json.return?.['Pool Price Report'] ?? json['Pool Price Report'];
+
+  chart.data.labels          = rows.map(r => r.begin_datetime_utc);
+  chart.data.datasets[0].data= rows.map(r => +r.pool_price);
+  chart.data.datasets[1].data= rows.map(r => +r.rolling_30day_avg);
+  chart.update();
+}
+
+document.getElementById('btn').onclick = load;
+load();                 // initial plot
+</script>
+</body>
+</html>
