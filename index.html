@@ -12,7 +12,7 @@
   </style>
 </head>
 <body>
-  <h1>AESO Pool Price (v1.1)</h1>
+  <h1>AESO Pool Price</h1>
 
   <div id="controls">
     From <input id="start" type="date" value="2025-01-01">
@@ -28,7 +28,7 @@
   </div>
 
   <canvas id="chart"  height="120"></canvas>
-  <h2>Average Pool Price by Hour (selected range)</h2>
+  <h2>Average Pool Price by Hour</h2>
   <canvas id="chart2" height="120"></canvas>
 
 <script>
@@ -42,7 +42,7 @@ const lineChart = new Chart(ctx1, {
   type:'line',
   data:{labels:[],datasets:[
     {label:'Pool Price',  data:[], borderColor:'#1976d2', borderWidth:1, pointRadius:2, fill:false},
-    {label:'Forecast',    data:[], borderColor:'#ff9800', borderWidth:1, pointRadius:0, fill:false},
+    {label:'Forecast Pool Price',    data:[], borderColor:'#ff9800', borderWidth:1, pointRadius:0, fill:false},
     {label:'30-Day Avg',  data:[], borderColor:'#d32f2f', borderWidth:1, pointRadius:0, fill:false}
   ]},
   options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
