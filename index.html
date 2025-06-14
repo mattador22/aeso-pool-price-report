@@ -2,7 +2,7 @@
 <html>
 <head>
   <meta charset="utf-8">
-  <title>AESO Pool-Price Viewer</title>
+  <title>AESO Pool Price</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
     body{font-family:sans-serif;max-width:1000px;margin:40px auto}
@@ -29,22 +29,39 @@
 
   <h2>AESO Pool Price</h2>
   <canvas id="chart"  height="120"></canvas>
+
   <h2>Average Pool Price by Hour</h2>
   <canvas id="chart2" height="120"></canvas>
 
 <script>
-/* ----------  CONFIG  --------------------------------------------------- */
-const proxy = 'https://aesoprice-proxy.matt-e74.workers.dev/';   // ← your Worker
-const ctx1  = document.getElementById('chart');
-const ctx2  = document.getElementById('chart2');
+/* ---------- configuration -------------------------------------------- */
+const proxy = 'https://aesoprice-proxy.matt-e74.workers.dev/';   // your Worker URL
 
-/* ----------  MAIN LINE-CHART  ----------------------------------------- */
+/* ---------- helpers --------------------------------------------------- */
+function sliceDates(startISO, endISO, maxDays){
+  const out = [];
+  let s = new Date(startISO);
+  const end = new Date(endISO);
+  while (s <= end) {
+    const e = new Date(s); e.setDate(e.getDate() + maxDays - 1);
+    if (e > end) e.setTime(end.getTime());
+    out.push({start:s.toISOString().slice(0,10), end:e.toISOString().slice(0,10)});
+    s.setDate(s.getDate() + maxDays);
+  }
+  return out;
+}
+
+/* ---------- charts ---------------------------------------------------- */
+const ctx1 = document.getElementById('chart');
+const ctx2 = document.getElementById('chart2');
+
+/* main line-chart */
 const lineChart = new Chart(ctx1, {
   type:'line',
   data:{labels:[],datasets:[
-    {label:'Pool Price', data:[], borderColor:'#1976d2', borderWidth:1, pointRadius:2, fill:false},
-    {label:'Forecast',   data:[], borderColor:'#ff9800', borderWidth:1, pointRadius:0, fill:false},
-    {label:'30-Day Avg', data:[], borderColor:'#d32f2f', borderWidth:1, pointRadius:0, fill:false}
+    {label:'Pool Price',  data:[], borderColor:'#1976d2', borderWidth:1, pointRadius:2, fill:false},
+    {label:'Forecast',    data:[], borderColor:'#ff9800', borderWidth:1, pointRadius:0, fill:false},
+    {label:'30-Day Avg',  data:[], borderColor:'#d32f2f', borderWidth:1, pointRadius:0, fill:false}
   ]},
   options:{
     plugins:{legend:{display:false}},
@@ -57,8 +74,8 @@ const lineChart = new Chart(ctx1, {
   }
 });
 
-/* ----------  HOURLY BAR-CHART  ---------------------------------------- */
-**const hrs = [...Array(24).keys()].map(h=>h.toString().padStart(2,'0')+':00');**
+/* hourly bar-chart */
+const hrs = [...Array(24).keys()].map(h=>h.toString().padStart(2,'0')+':00');
 
 const barChart = new Chart(ctx2, {
   type:'bar',
@@ -74,45 +91,59 @@ const barChart = new Chart(ctx2, {
   }
 });
 
-/* ----------  FETCH + PROCESS  ----------------------------------------- */
+/* ---------- fetch + update ------------------------------------------- */
 async function load() {
   const s = document.getElementById('start').value;
   const e = document.getElementById('end').value;
-  const url = `${proxy}?startDate=${s}&endDate=${e}`;
 
-  const js   = await (await fetch(url)).json();
-  const rows = js.return?.['Pool Price Report'] ?? js['Pool Price Report'] ?? [];
+  /* API allows ≤365-day windows; slice if necessary */
+  const slices = sliceDates(s, e, 365);
+  const rows = [];
 
-  /* update line chart */
-  lineChart.data.labels             = rows.map(r=>r.begin_datetime_utc);
-  lineChart.data.datasets[0].data   = rows.map(r=>+r.pool_price);
-  lineChart.data.datasets[1].data   = rows.map(r=>+r.forecast_pool_price);
-  lineChart.data.datasets[2].data   = rows.map(r=>+r.rolling_30day_avg);
+  try{
+    for (const rng of slices) {
+      const url = `${proxy}?startDate=${rng.start}&endDate=${rng.end}`;
+      const res = await fetch(url);
+      if(!res.ok) throw new Error(`API ${res.status}`);
+      const js  = await res.json();
+      const arr = js.return?.['Pool Price Report'] ?? js['Pool Price Report'] ?? [];
+      rows.push(...arr);
+    }
+  }catch(err){
+    alert('Data fetch failed: '+err);
+    console.error(err);
+    return;
+  }
+
+  /* update line-chart */
+  lineChart.data.labels            = rows.map(r=>r.begin_datetime_utc);
+  lineChart.data.datasets[0].data  = rows.map(r=>+r.pool_price);
+  lineChart.data.datasets[1].data  = rows.map(r=>+r.forecast_pool_price);
+  lineChart.data.datasets[2].data  = rows.map(r=>+r.rolling_30day_avg);
   lineChart.update();
 
-  /* compute hourly averages */
-  const buckets = Array.from({length:24}, ()=>({sum:0,count:0}));
+  /* hourly averages */
+  const bucket = Array.from({length:24},()=>({sum:0,cnt:0}));
   rows.forEach(r=>{
     const h = new Date(r.begin_datetime_utc.replace(' ','T')+'Z').getUTCHours();
-    buckets[h].sum   += +r.pool_price;
-    buckets[h].count += 1;
+    bucket[h].sum += +r.pool_price; bucket[h].cnt++;
   });
-  barChart.data.datasets[0].data = buckets.map(b=> b.count? +(b.sum/b.count).toFixed(2): null);
+  barChart.data.datasets[0].data = bucket.map(b=>b.cnt?+(b.sum/b.cnt).toFixed(2):null);
   barChart.update();
 }
 
-/* ----------  TOGGLES  -------------------------------------------------- */
+/* ---------- toggles for datasets ------------------------------------- */
 document.querySelectorAll('#toggles input').forEach(cb=>{
   cb.addEventListener('change', e=>{
-    const idx = +e.target.dataset.dsx;
-    lineChart.data.datasets[idx].hidden = !e.target.checked;
+    const i = +e.target.dataset.dsx;
+    lineChart.data.datasets[i].hidden = !e.target.checked;
     lineChart.update();
   });
 });
 
-/* ----------  INIT  ----------------------------------------------------- */
+/* ---------- init ------------------------------------------------------ */
 document.getElementById('btn').onclick = load;
-load();  // auto-draw on first load
+load();
 </script>
 </body>
 </html>
