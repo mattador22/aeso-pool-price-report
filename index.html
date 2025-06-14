@@ -5,12 +5,14 @@
   <title>AESO Pool-Price Viewer</title>
   <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
   <style>
-    body{font-family:sans-serif;max-width:900px;margin:40px auto}
-    #controls{margin-bottom:20px}
+    body{font-family:sans-serif;max-width:1000px;margin:40px auto}
+    #controls{margin-bottom:12px}
+    #toggles label{margin-right:12px;font-size:.9rem}
+    canvas{max-width:100%}
   </style>
 </head>
 <body>
-  <h1>AESO Pool Price</h1>
+  <h1>AESO Pool Price (v1.1)</h1>
 
   <div id="controls">
     From <input id="start" type="date" value="2025-01-01">
@@ -18,39 +20,83 @@
     <button id="btn">Fetch</button>
   </div>
 
-  <canvas id="chart" height="120"></canvas>
+  <!-- toggle menu -->
+  <div id="toggles">
+    <label><input type="checkbox" data-dsx="0" checked> Pool Price</label>
+    <label><input type="checkbox" data-dsx="1" checked> Forecast</label>
+    <label><input type="checkbox" data-dsx="2" checked> 30-Day Avg</label>
+  </div>
+
+  <canvas id="chart"  height="120"></canvas>
+  <h2>Average Pool Price by Hour (selected range)</h2>
+  <canvas id="chart2" height="120"></canvas>
 
 <script>
+/* ----------  CONFIG  --------------------------------------------------- */
 const proxy = 'https://aesoprice-proxy.matt-e74.workers.dev/';   // ← your Worker
+const ctx1  = document.getElementById('chart');
+const ctx2  = document.getElementById('chart2');
 
-const ctx = document.getElementById('chart');
-const chart = new Chart(ctx, {
+/* ----------  MAIN LINE-CHART  ----------------------------------------- */
+const lineChart = new Chart(ctx1, {
   type:'line',
   data:{labels:[],datasets:[
-    {label:'Pool Price', data:[], borderWidth:1, borderColor:'#1976d2', fill:false},
-    {label:'Forecast Pool Price', data:[], borderWidth:1, borderColor:'#ff9800', fill:false},
-    {label:'30-Day Avg', data:[], borderWidth:1, borderColor:'#d32f2f', fill:false}
+    {label:'Pool Price',  data:[], borderColor:'#1976d2', borderWidth:1, pointRadius:2, fill:false},
+    {label:'Forecast',    data:[], borderColor:'#ff9800', borderWidth:1, pointRadius:0, fill:false},
+    {label:'30-Day Avg',  data:[], borderColor:'#d32f2f', borderWidth:1, pointRadius:0, fill:false}
+  ]},
+  options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+});
+
+/* ----------  HOURLY BAR-CHART  ---------------------------------------- */
+const hrs = [...Array(24).keys()].map(h=>h.toString().padStart(2,'0')+':00');
+const barChart = new Chart(ctx2, {
+  type:'bar',
+  data:{labels:hrs,datasets:[
+    {label:'Avg $/MWh', data:[], backgroundColor:'#1976d2'}
   ]},
   options:{scales:{y:{beginAtZero:true}}}
 });
 
+/* ----------  FETCH + PROCESS  ----------------------------------------- */
 async function load() {
   const s = document.getElementById('start').value;
   const e = document.getElementById('end').value;
   const url = `${proxy}?startDate=${s}&endDate=${e}`;
 
-  const json = await (await fetch(url)).json();
-  const rows = json.return?.['Pool Price Report'] ?? json['Pool Price Report'];
+  const js   = await (await fetch(url)).json();
+  const rows = js.return?.['Pool Price Report'] ?? js['Pool Price Report'] ?? [];
 
-  chart.data.labels          = rows.map(r => r.begin_datetime_utc);
-  chart.data.datasets[0].data= rows.map(r => +r.pool_price);
-  chart.data.datasets[1].data = rows.map(r => +r.forecast_pool_price);
-  chart.data.datasets[2].data= rows.map(r => +r.rolling_30day_avg);
-  chart.update();
+  /* update line chart */
+  lineChart.data.labels             = rows.map(r=>r.begin_datetime_utc);
+  lineChart.data.datasets[0].data   = rows.map(r=>+r.pool_price);
+  lineChart.data.datasets[1].data   = rows.map(r=>+r.forecast_pool_price);
+  lineChart.data.datasets[2].data   = rows.map(r=>+r.rolling_30day_avg);
+  lineChart.update();
+
+  /* compute hourly averages */
+  const buckets = Array.from({length:24}, ()=>({sum:0,count:0}));
+  rows.forEach(r=>{
+    const h = new Date(r.begin_datetime_utc.replace(' ','T')+'Z').getUTCHours();
+    buckets[h].sum   += +r.pool_price;
+    buckets[h].count += 1;
+  });
+  barChart.data.datasets[0].data = buckets.map(b=> b.count? +(b.sum/b.count).toFixed(2): null);
+  barChart.update();
 }
 
+/* ----------  TOGGLES  -------------------------------------------------- */
+document.querySelectorAll('#toggles input').forEach(cb=>{
+  cb.addEventListener('change', e=>{
+    const idx = +e.target.dataset.dsx;
+    lineChart.data.datasets[idx].hidden = !e.target.checked;
+    lineChart.update();
+  });
+});
+
+/* ----------  INIT  ----------------------------------------------------- */
 document.getElementById('btn').onclick = load;
-load();                 // initial plot
+load();  // auto-draw on first load
 </script>
 </body>
 </html>
