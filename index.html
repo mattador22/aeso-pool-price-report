@@ -51,16 +51,15 @@ const lineChart = new Chart(ctx1, {
     scales:{
       y:{
         beginAtZero:true,
-        title:{
-          display:true,
-          text:'AESO Pool Price ($CAD/MWh)'
-        }
+        title:{display:true,text:'AESO Pool Price ($CAD/MWh)'}
       }
     }
   }
 });
 
 /* ----------  HOURLY BAR-CHART  ---------------------------------------- */
+**const hrs = [...Array(24).keys()].map(h=>h.toString().padStart(2,'0')+':00');**
+
 const barChart = new Chart(ctx2, {
   type:'bar',
   data:{labels:hrs,datasets:[
@@ -68,19 +67,9 @@ const barChart = new Chart(ctx2, {
   ]},
   options:{
     scales:{
-      x:{
-        title:{
-          display:true,
-          text:'Hour'
-        }
-      },
-      y:{
-        beginAtZero:true,
-        title:{
-          display:true,
-          text:'AESO Pool Price ($CAD/MWh)'
-        }
-      }
+      x:{ title:{display:true,text:'Hour'} },
+      y:{ beginAtZero:true,
+          title:{display:true,text:'AESO Pool Price ($CAD/MWh)'} }
     }
   }
 });
