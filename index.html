@@ -10,7 +10,7 @@
   </style>
 </head>
 <body>
-  <h1>AESO Pool Price (v1.1)</h1>
+  <h1>AESO Pool Price</h1>
 
   <div id="controls">
     From <input id="start" type="date" value="2025-01-01">
@@ -28,6 +28,7 @@ const chart = new Chart(ctx, {
   type:'line',
   data:{labels:[],datasets:[
     {label:'Pool Price', data:[], borderWidth:1, borderColor:'#1976d2', fill:false},
+    {label:'Forecast Pool Price', data:[], borderWidth:1, borderColor:'#ff9800', fill:false},
     {label:'30-Day Avg', data:[], borderWidth:1, borderColor:'#d32f2f', fill:false}
   ]},
   options:{scales:{y:{beginAtZero:true}}}
@@ -43,7 +44,8 @@ async function load() {
 
   chart.data.labels          = rows.map(r => r.begin_datetime_utc);
   chart.data.datasets[0].data= rows.map(r => +r.pool_price);
-  chart.data.datasets[1].data= rows.map(r => +r.rolling_30day_avg);
+  chart.data.datasets[1].data = rows.map(r => +r.forecast_pool_price);
+  chart.data.datasets[2].data= rows.map(r => +r.rolling_30day_avg);
   chart.update();
 }
 
