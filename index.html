@@ -42,21 +42,47 @@ const ctx2  = document.getElementById('chart2');
 const lineChart = new Chart(ctx1, {
   type:'line',
   data:{labels:[],datasets:[
-    {label:'Pool Price',  data:[], borderColor:'#1976d2', borderWidth:1, pointRadius:2, fill:false},
-    {label:'Forecast Pool Price',    data:[], borderColor:'#ff9800', borderWidth:1, pointRadius:0, fill:false},
-    {label:'30-Day Avg',  data:[], borderColor:'#d32f2f', borderWidth:1, pointRadius:0, fill:false}
+    {label:'Pool Price', data:[], borderColor:'#1976d2', borderWidth:1, pointRadius:2, fill:false},
+    {label:'Forecast',   data:[], borderColor:'#ff9800', borderWidth:1, pointRadius:0, fill:false},
+    {label:'30-Day Avg', data:[], borderColor:'#d32f2f', borderWidth:1, pointRadius:0, fill:false}
   ]},
-  options:{plugins:{legend:{display:false}},scales:{y:{beginAtZero:true}}}
+  options:{
+    plugins:{legend:{display:false}},
+    scales:{
+      y:{
+        beginAtZero:true,
+        title:{
+          display:true,
+          text:'AESO Pool Price ($CAD/MWh)'
+        }
+      }
+    }
+  }
 });
 
 /* ----------  HOURLY BAR-CHART  ---------------------------------------- */
-const hrs = [...Array(24).keys()].map(h=>h.toString().padStart(2,'0')+':00');
 const barChart = new Chart(ctx2, {
   type:'bar',
   data:{labels:hrs,datasets:[
     {label:'Avg $/MWh', data:[], backgroundColor:'#1976d2'}
   ]},
-  options:{scales:{y:{beginAtZero:true}}}
+  options:{
+    scales:{
+      x:{
+        title:{
+          display:true,
+          text:'Hour'
+        }
+      },
+      y:{
+        beginAtZero:true,
+        title:{
+          display:true,
+          text:'AESO Pool Price ($CAD/MWh)'
+        }
+      }
+    }
+  }
 });
 
 /* ----------  FETCH + PROCESS  ----------------------------------------- */
