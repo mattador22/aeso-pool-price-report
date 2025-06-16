@@ -1,149 +1,177 @@
 <!doctype html>
-<html>
+<html lang="en">
 <head>
-  <meta charset="utf-8">
-  <title>AESO Pool Price</title>
-  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
-  <style>
-    body{font-family:sans-serif;max-width:1000px;margin:40px auto}
-    #controls{margin-bottom:12px}
-    #toggles label{margin-right:12px;font-size:.9rem}
-    canvas{max-width:100%}
-  </style>
+<meta charset="utf-8">
+<title>AESO Pool-Price Dashboard</title>
+
+<!-- Chart.js (line + bar) -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+<!-- Highcharts Stock (screenshot-style chart) -->
+<script src="https://code.highcharts.com/stock/highstock.js"></script>
+<script src="https://code.highcharts.com/stock/modules/accessibility.js"></script>
+
+<style>
+  body{font-family:sans-serif;max-width:1000px;margin:40px auto}
+  #controls{margin-bottom:12px}
+  #toggles label{margin-right:12px;font-size:.9rem}
+  canvas{max-width:100%}
+  #hcChart{height:400px;margin-top:40px}
+</style>
 </head>
 <body>
-  <h1>AESO Pool Price</h1>
+<h1>AESO Pool Price</h1>
 
-  <div id="controls">
-    From <input id="start" type="date" value="2000-01-01">
-    To   <input id="end"   type="date" value="2025-05-31">
-    <button id="btn">Fetch</button>
-  </div>
+<div id="controls">
+  From <input id="start" type="date" value="2000-01-01">
+  To   <input id="end"   type="date" value="2025-05-31">
+  <button id="btn">Fetch</button>
+</div>
 
-  <!-- toggle menu -->
-  <div id="toggles">
-    <label><input type="checkbox" data-dsx="0" checked> Pool Price</label>
-    <label><input type="checkbox" data-dsx="1" checked> Forecast</label>
-    <label><input type="checkbox" data-dsx="2" checked> 30-Day Avg</label>
-  </div>
+<!-- toggle menu -->
+<div id="toggles">
+  <label><input type="checkbox" data-dsx="0" checked> Pool Price</label>
+  <label><input type="checkbox" data-dsx="1" checked> Forecast</label>
+  <label><input type="checkbox" data-dsx="2" checked> 30-Day Avg</label>
+</div>
 
-  <h2>AESO Pool Price</h2>
-  <canvas id="chart"  height="120"></canvas>
+<h2>AESO Pool Price</h2>
+<canvas id="chart" height="120"></canvas>
 
-  <h2>Average Pool Price by Hour</h2>
-  <canvas id="chart2" height="120"></canvas>
+<h2>Average Pool Price by Hour</h2>
+<canvas id="chart2" height="120"></canvas>
+
+<h2 style="margin-top:40px">Interactive (Zoomable) Pool-Price Chart</h2>
+<div id="hcChart"></div>
 
 <script>
 /* ---------- configuration -------------------------------------------- */
-const proxy = 'https://aesoprice-proxy.matt-e74.workers.dev/';   // Worker URL
+const proxy = 'https://aesoprice-proxy.matt-e74.workers.dev/';   // your Worker URL
 
-/* ---------- helpers --------------------------------------------------- */
-function sliceDates(startISO, endISO, maxDays){
-  const out = [];
-  let s = new Date(startISO);
-  const end = new Date(endISO);
-  while (s <= end) {
-    const e = new Date(s); e.setDate(e.getDate() + maxDays - 1);
-    if (e > end) e.setTime(end.getTime());
-    out.push({start:s.toISOString().slice(0,10), end:e.toISOString().slice(0,10)});
-    s.setDate(s.getDate() + maxDays);
+/* ---------- helper: slice long date ranges --------------------------- */
+function sliceDates(startISO,endISO,maxDays){
+  const out=[], end=new Date(endISO);
+  let s=new Date(startISO);
+  while(s<=end){
+    const e=new Date(s); e.setDate(e.getDate()+maxDays-1);
+    if(e>end) e.setTime(end.getTime());
+    out.push({start:s.toISOString().slice(0,10),end:e.toISOString().slice(0,10)});
+    s.setDate(s.getDate()+maxDays);
   }
   return out;
 }
 
-/* ---------- charts ---------------------------------------------------- */
-const ctx1 = document.getElementById('chart');
-const ctx2 = document.getElementById('chart2');
+/* ---------- helper: bucket aggregation ------------------------------- */
+function bucketAgg(rows,period,field){
+  const fmt={day:d=>d.slice(0,10),
+             month:d=>d.slice(0,7),
+             quarter:d=>{const[m,y]=[d.slice(5,7),d.slice(0,4)];return`${y}-Q${Math.floor((+m-1)/3)+1}`},
+             year:d=>d.slice(0,4)}[period];
+  const map=new Map();
+  rows.forEach(r=>{
+    const k=fmt(r.begin_datetime_utc);
+    const o=map.get(k)||{sum:0,cnt:0};
+    o.sum+=+r[field]; o.cnt++; map.set(k,o);
+  });
+  return[...map.entries()].sort((a,b)=>a[0].localeCompare(b[0]))
+         .map(([k,v])=>({key:k,avg:+(v.sum/v.cnt).toFixed(2)}));
+}
 
-/* main line-chart */
-const lineChart = new Chart(ctx1, {
+/* ---------- Chart.js instances --------------------------------------- */
+const lineCtx=document.getElementById('chart');
+const hrs=[...Array(24).keys()].map(h=>h.toString().padStart(2,'0')+':00');
+const barCtx=document.getElementById('chart2');
+
+const lineChart=new Chart(lineCtx,{
   type:'line',
   data:{labels:[],datasets:[
     {label:'Pool Price',  data:[], borderColor:'#1976d2', borderWidth:1, pointRadius:2, fill:false},
     {label:'Forecast',    data:[], borderColor:'#ff9800', borderWidth:1, pointRadius:0, fill:false},
     {label:'30-Day Avg',  data:[], borderColor:'#d32f2f', borderWidth:1, pointRadius:0, fill:false}
   ]},
-  options:{
-    plugins:{legend:{display:false}},
-    scales:{
-      y:{
-        beginAtZero:true,
-        title:{display:true,text:'AESO Pool Price ($CAD/MWh)'}
-      }
-    }
-  }
+  options:{plugins:{legend:{display:false}},
+           scales:{y:{beginAtZero:true,title:{display:true,text:'AESO Pool Price ($CAD/MWh)'}}}}
 });
 
-/* hourly bar-chart */
-const hrs = [...Array(24).keys()].map(h=>h.toString().padStart(2,'0')+':00');
-
-const barChart = new Chart(ctx2, {
+const barChart=new Chart(barCtx,{
   type:'bar',
   data:{labels:hrs,datasets:[
-    {label:'Avg $/MWh', data:[], backgroundColor:'#1976d2'}
-  ]},
-  options:{
-    scales:{
-      x:{ title:{display:true,text:'Hour'} },
-      y:{ beginAtZero:true,
-          title:{display:true,text:'AESO Pool Price ($CAD/MWh)'} }
-    }
-  }
+    {label:'Avg $/MWh',data:[],backgroundColor:'#1976d2'}]},
+  options:{scales:{
+    x:{title:{display:true,text:'Hour'}},
+    y:{beginAtZero:true,title:{display:true,text:'AESO Pool Price ($CAD/MWh)'}}}}
 });
 
-/* ---------- fetch + update ------------------------------------------- */
-async function load() {
-  const s = document.getElementById('start').value;
-  const e = document.getElementById('end').value;
-
-  /* API allows ≤365-day windows; slice if necessary */
-  const slices = sliceDates(s, e, 365);
-  const rows = [];
-
-  try{
-    for (const rng of slices) {
-      const url = `${proxy}?startDate=${rng.start}&endDate=${rng.end}`;
-      const res = await fetch(url);
-      if(!res.ok) throw new Error(`API ${res.status}`);
-      const js  = await res.json();
-      const arr = js.return?.['Pool Price Report'] ?? js['Pool Price Report'] ?? [];
-      rows.push(...arr);
-    }
-  }catch(err){
-    alert('Data fetch failed: '+err);
-    console.error(err);
-    return;
-  }
-
-  /* update line-chart */
-  lineChart.data.labels            = rows.map(r=>r.begin_datetime_utc);
-  lineChart.data.datasets[0].data  = rows.map(r=>+r.pool_price);
-  lineChart.data.datasets[1].data  = rows.map(r=>+r.forecast_pool_price);
-  lineChart.data.datasets[2].data  = rows.map(r=>+r.rolling_30day_avg);
-  lineChart.update();
-
-  /* hourly averages */
-  const bucket = Array.from({length:24},()=>({sum:0,cnt:0}));
-  rows.forEach(r=>{
-    const h = new Date(r.begin_datetime_utc.replace(' ','T')+'Z').getUTCHours();
-    bucket[h].sum += +r.pool_price; bucket[h].cnt++;
-  });
-  barChart.data.datasets[0].data = bucket.map(b=>b.cnt?+(b.sum/b.cnt).toFixed(2):null);
-  barChart.update();
+/* ---------- Highcharts Stock instance (created later) ---------------- */
+let hcChart=null;
+function buildHC(series){
+  if(hcChart){hcChart.update({series}); return;}
+  hcChart=Highcharts.stockChart('hcChart',{
+    chart:{zoomType:'x'},
+    rangeSelector:{selected:4,buttons:[
+      {type:'hour',count:1,text:'1h'},
+      {type:'hour',count:8,text:'8h'},
+      {type:'day', count:1,text:'24h'},
+      {type:'day', count:7,text:'7D'},
+      {type:'month',count:1,text:'30D'},
+      {type:'all',text:'All'}]},
+    yAxis:{title:{text:'Pool Price ($/MWh)'}},
+    tooltip:{valueDecimals:2,valuePrefix:'$'},
+    title:{text:'Pool Price (+ Forecast)'},
+    series,
+    accessibility:{enabled:false},
+    credits:{enabled:false}});
 }
 
-/* ---------- toggles for datasets ------------------------------------- */
+/* ---------- fetch + update ------------------------------------------- */
+async function load(){
+  const s=document.getElementById('start').value;
+  const e=document.getElementById('end').value;
+  const slices=sliceDates(s,e,365);
+  const rows=[];
+  try{
+    for(const r of slices){
+      const url=`${proxy}?startDate=${r.start}&endDate=${r.end}`;
+      const js=await (await fetch(url)).json();
+      rows.push(...(js.return?.['Pool Price Report']??js['Pool Price Report']??[]));
+    }
+  }catch(err){alert('API fetch failed'); console.error(err);return;}
+
+  /* Chart.js line */
+  lineChart.data.labels           = rows.map(r=>r.begin_datetime_utc);
+  lineChart.data.datasets[0].data = rows.map(r=>+r.pool_price);
+  lineChart.data.datasets[1].data = rows.map(r=>+r.forecast_pool_price);
+  lineChart.data.datasets[2].data = rows.map(r=>+r.rolling_30day_avg);
+  lineChart.update();
+
+  /* hourly averages (bar) */
+  const bucket=Array.from({length:24},()=>({sum:0,cnt:0}));
+  rows.forEach(r=>{
+    const h=new Date(r.begin_datetime_utc.replace(' ','T')+'Z').getUTCHours();
+    bucket[h].sum+=+r.pool_price; bucket[h].cnt++;});
+  barChart.data.datasets[0].data=bucket.map(b=>b.cnt?+(b.sum/b.cnt).toFixed(2):null);
+  barChart.update();
+
+  /* Highcharts Stock series */
+  const poolSeries    = rows.map(r=>[Date.parse(r.begin_datetime_utc+'Z'),+r.pool_price]);
+  const forecastSeries= rows.map(r=>[Date.parse(r.begin_datetime_utc+'Z'),+r.forecast_pool_price]);
+  buildHC([
+    {name:'Pool Price',   data:poolSeries,color:'#1976d2',tooltip:{valuePrefix:'$'}},
+    {name:'Forecast',     data:forecastSeries,color:'#ff9800'}
+  ]);
+}
+
+/* ---------- toggles for datasets (Chart.js only) --------------------- */
 document.querySelectorAll('#toggles input').forEach(cb=>{
-  cb.addEventListener('change', e=>{
-    const i = +e.target.dataset.dsx;
-    lineChart.data.datasets[i].hidden = !e.target.checked;
+  cb.onchange=e=>{
+    const i=+e.target.dataset.dsx;
+    lineChart.data.datasets[i].hidden=!e.target.checked;
     lineChart.update();
-  });
+  };
 });
 
 /* ---------- init ------------------------------------------------------ */
-document.getElementById('btn').onclick = load;
-load();
+document.getElementById('btn').onclick=load;
+load();           // auto-draw on load
 </script>
 </body>
 </html>
